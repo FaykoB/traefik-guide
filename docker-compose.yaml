@@ -1,0 +1,443 @@
+version: '3.9'
+
+
+################################# EXTENSION FIELDS ##################################################
+##  to call these fields we will use <<: <name of field call>                                      ##  
+##  Our example:  <<: *default-tz-puid-pgid                                                        ##
+##  Those special fields can be of any format as long as they are located at the root of your file ##
+##  and their name start with the x- character sequence.                                           ## 
+################################  EXTENSION FIELDS ##################################################
+#                                                                                                   #
+#                                                                                                   # 
+###################### System Variables w/o Mount Section ###########################################
+#                                                                                                   #
+#                                                                                                   #
+x-environment: &systemVariables                                                                     # 
+  TZ: $TZ
+  PUID: $PUID
+  PGID: $PGID
+
+##  Keys common to some of the core services that we always to automatically restart on failure    ##
+##  So for any service that requires always restart with standard network and security policies,   ##
+##  all we need to do is to just include <<: *common-keys-core.                                    ##
+x-common-keys-core: &common-keys-core                                                               #
+  networks:
+    - t2_proxy
+  security_opt:
+    - no-new-privileges:true
+  restart: always
+  # profiles:
+  # - core
+
+##  Keys common to some of the services in basic-services.txt                                      ##
+x-common-keys-monitoring: &common-keys-monitoring                                                   #
+  networks:
+    - t2_proxy
+  security_opt:
+    - no-new-privileges:true
+  restart: always
+  # profiles:
+  # - monitoring
+
+##  Keys common to some of the dependent services/apps                                             ##
+x-common-keys-apps: &common-keys-apps                                                               #
+  networks:
+    - t2_proxy  
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+  # profiles:
+  # - apps
+
+##  Keys common to some of the services in media-services.txt                                      ##
+x-common-keys-media: &common-keys-media                                                             #
+  networks:
+    - t2_proxy
+  security_opt:
+    - no-new-privileges:true
+  restart: "no"
+  # profiles:
+  # - media
+
+#                                                                                                   #
+#                                                                                                   #
+################################# EXTENSION FIELDS ##################################################
+# to call these fields we will use <<: <name of field call>                                         #  
+# Our example:  <<: *default-tz-puid-pgid                                                           #
+# Those special fields can be of any format as long as they are located at the root of your file    #
+# and their name start with the x- character sequence.                                              # 
+################################  EXTENSION FIELDS ##################################################
+#                                                                                                   #
+#                                                                                                   #
+#################################### SERVICES #######################################################
+#                                                                                                   # 
+#################################### SERVICES #######################################################
+services:                                                                                           #
+  
+############################ Traefik 2 - Reverse Proxy ##############################################
+  traefik:                                                                                          #
+    <<: *common-keys-core # See EXTENSION FIELDS at the top                                         #
+    container_name: reverseProxy_Traefik                                                            #
+    image: traefik:2.7                                                                              #
+    command: # CLI arguments                                                                        #
+      - --global.checkNewVersion=true                                                               #
+      - --global.sendAnonymousUsage=true                                                            #
+      - --entryPoints.http.address=:80                                                              #
+      - --entryPoints.https.address=:443                                                            #
+#                                                                                                   # 
+############################ Traefik 2 - Reverse Proxy ##############################################
+
+
+## Base Wiki for These Sections: https://www.smarthomebeginner.com/traefik-docker-compose-guide-2022/ ##
+
+###################################################################################### TRUSTED IP SECTION READ NOTES #########################################################################################
+#  Allow these IPs to set the X-Forwarded-* headers - Cloudflare IPs: https://www.cloudflare.com/ips/                                                                                                        #
+#  When using Cloudflare and all your traffic is behind their proxy (orange cloud in the DNS records), the request's origin IP is replaced with Cloudflare's IP (CLOUDFLARE_IPSCloudflare IPs,               #
+#  Which means that Traefik will accept the X-Forwarded-For header set by Cloudflare.                                                                                                                        #
+#  This option is not needed if you are not using Cloudflare's proxy features (DNS entries are grey-clouded). The same applies for Local IP addresses (LOCAL_IPS--api.insecure=true                          #   
+#                                                                                                                                                                                                            #
+      - --entrypoints.https.forwardedHeaders.trustedIPs=$CLOUDFLARE_IPS,$LOCAL_IPS  #                                                                                                                        #
+#                                                                                                                                                                                                            #
+###################################################################################### TRUSTED IP SECTION READ NOTES #########################################################################################
+
+
+############################################################################################### Insecure API #################################################################################################
+#This line makes the API available through the insecure entrypoint (port 8080). Since we are going to use api@internal (shown later). We do not need to turn on insecure API.                                #
+#                                                                                                                                                                                                            #
+#      - --api.insecure=true                                                                                                                                                                                 #
+#                                                                                                                                                                                                            #
+############################################################################################### Insecure API #################################################################################################
+
+      - --entryPoints.traefik.address=:8080
+      - --api=true
+      - --api.dashboard=true
+  
+########################################################################################## Insecure Skip Verify ##############################################################################################
+# I recommend leaving this line disabled (commented out), which will default to "false". Certain apps that require HTTPS for their web UI can be finicky behind Traefik (eg. NextCloud, Unifi Controller).   #
+# If you set insecureSkipVerify to true this disables SSL certificate verification. Doing so makes those finicky apps work but we want to avoid this if possible. We can use TCP routers that will allow     #
+# us to access services like Nextcloud and Unifi Controller that require HTTPS and have their own certificate.                                                                                               #
+#                                                                                                                                                                                                            #  
+#       - --serversTransport.insecureSkipVerify=true  #                                                                                                                                                      #
+#                                                                                                                                                                                                            #
+########################################################################################## Insecure Skip Verify ##############################################################################################
+
+
+############################################################################################ Log File Section ################################################################################################
+# Log Level Options: (Default: error) DEBUG, INFO, WARN, ERROR, FATAL, PANIC                                                                                                                                 #
+#                                                                                                                                                                                                            #
+      - --log=true                                              #                                                                                                                                            #
+      - --log.filePath=/logs/traefik.log                        #                                                                                                                                            #
+      - --log.level=DEBUG                                       #                                                                                                                                            #
+      - --accessLog=true                                        #                                                                                                                                            #
+      - --accessLog.filePath=/logs/access.log                   #                                                                                                                                            #
+      - --accessLog.bufferingSize=100                           ## Configuring a buffer of 100 lines ##                                                                                                      #
+      - --accessLog.filters.statusCodes=204-299,400-499,500-599 #                                                                                                                                            #
+############################################################################################ Log File Section ################################################################################################
+
+
+############################################################################################ Docker Settings #################################################################################################
+ 
+      - --providers.docker=true
+      - --providers.docker.endpoint=unix:///var/run/docker.sock # Use Docker Socket Proxy instead for improved security
+#     - --providers.docker.endpoint=tcp://socket-proxy:2375 # Use this instead of the previous line if you have socket proxy.
+      - --providers.docker.exposedByDefault=false
+
+############################################################################################ Docker Settings #################################################################################################
+
+
+######################################################################################## Entrypoints / Providers #############################################################################################
+ 
+#  For TLS connections, Traefik will use a few default options. But we can strengthen this a bit by defining some custom TLS options.  
+#  Wiki: https://doc.traefik.io/traefik/https/tls/#tls-options  
+      - --entrypoints.https.http.tls.options=tls-opts@file
+#  Add dns-cloudflare as default certresolver for all services. Also enables TLS and no need to specify on individual services
+      - --entrypoints.https.http.tls.certresolver=dns-cloudflare
+      - --entrypoints.https.http.tls.domains[0].main=$DOMAINNAME_CLOUD_SERVER
+      - --entrypoints.https.http.tls.domains[0].sans=*.$DOMAINNAME_CLOUD_SERVER
+#     - --entrypoints.https.http.tls.domains[1].main=$DOMAINNAME2 # Pulls main cert for second domain
+#     - --entrypoints.https.http.tls.domains[1].sans=*.$DOMAINNAME2 # Pulls wildcard cert for second domain
+      - --providers.docker.network=t2_proxy
+      - --providers.docker.swarmMode=false
+
+
+#  In this folder, we will store some configurations that Traefik 2 can pick up dynamically in real-time (if --providers.file.watch is set to true), without needing a restart.
+#  Examples include middlewares, configurations for proxying external or non-docker apps, etc.
+
+      - --providers.file.directory=/rules # Load dynamic configuration from one or more .toml or .yml files in a directory
+  
+#  This line is commented out because we are not going to use rules.toml (or yml). Instead, we are going to use a rules folder, which is enabled in the previous line of the configuration.  
+#     - --providers.file.filename=/path/to/file # Load dynamic configuration from a file
+      - --providers.file.watch=true # Only works on top level files in the rules folder
+
+######################################################################################## Entrypoints / Providers #############################################################################################
+
+ 
+###################################################################################### LetsEncrypt Staging or Live ###########################################################################################
+#                                                                                                                                                                                                            #   
+#  This is a very important line. When enabled, we will be using the LetsEncrypt staging server to check if everything is working fine.                                                                      # 
+#  As mentioned previously, LetsEncrypt has a rate limit to prevent system abuse. In case you have errors in your Traefik 2 Docker Compose, you may be locked out of LetsEncrypt validation.                 #
+#  To prevent this, we will use the staging server for the initial setup.                                                                                                                                    #
+#  Once we ensure everything is working well (shown later) we will comment out this line and have Traefik 2 get the real LetsEncrypt SSL certificates from the real server.                                  #
+      - --certificatesResolvers.dns-cloudflare.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory ##  LetsEncrypt Staging Server - uncomment when testing ##                               #
+#                                                                                                                                                                                                            #   
+###################################################################################### LetsEncrypt Staging or Live ###########################################################################################
+
+
+######################################################################################## Cloudflare Settings #################################################################################################
+  
+      - --certificatesResolvers.dns-cloudflare.acme.email=$CLOUDFLARE_EMAIL
+      - --certificatesResolvers.dns-cloudflare.acme.storage=/acme.json
+      - --certificatesResolvers.dns-cloudflare.acme.dnsChallenge.provider=cloudflare
+      - --certificatesResolvers.dns-cloudflare.acme.dnsChallenge.resolvers=1.1.1.1:53,1.0.0.1:53
+      - --certificatesResolvers.dns-cloudflare.acme.dnsChallenge.delayBeforeCheck=90 # To delay DNS check and reduce LE hitrate          
+ 
+    
+    networks:                                                                                       #
+      t2_proxy:                                                                                     #
+        ipv4_address: 192.168.90.200      ## You can specify a static IP ##                         #
+     # socket_proxy:                                                                                #
+     #  To have docker assign a Dynamic IP uncomment and format the below and comment the above     #
+     #networks:                                                                                     #
+     #  - t2_proxy                                                                                  #
+     # Use the above                                                                                #
+
+     ############################### Why a Static IP? ###############################################
+     #  Setting a static IP is helpful for some services like databases (MariaDB, InfluxDB, etc.)   #
+     #  or whenever one of your containers need to refer to another statically.                     #
+     #  For example, Radarr connecting to Transmission or Nzbget using their static Docker IP       #
+     #  instead of exposing any ports to the host.                                                  #
+     ############################### Why a Static IP? ###############################################
+     
+    ports:                                                                                          #
+      - target: 80
+        published: 81
+        protocol: tcp
+        mode: host
+      - target: 443
+        published: 444
+        protocol: tcp
+        mode: host
+     # - target: 8080 # insecure api wont work
+     #   published: 8080
+     #   protocol: tcp
+     #   mode: host
+ 
+    volumes:                                                                                        #
+      - $DOCKERDIR/traefik/rules/cloudserver:/rules             # file provider directory
+      - /var/run/docker.sock:/var/run/docker.sock:ro            # If you use Docker Socket Proxy, comment this line out
+      - $DOCKERDIR/traefik/acme/acme.json:/acme.json            # cert location - you must create this empty file and change permissions to 600
+      - /logs/traefik:/logs                                     # for fail2ban or crowdsec
+      - $DOCKERDIR/shared:/shared                               #
+    environment:                                                                                    # 
+      - TZ=$TZ
+      - CF_API_EMAIL_FILE=$SECRETSDIR/cloudflare_Email
+      - CF_API_KEY_FILE=$SECRETSDIR/cloudflare_API
+      - HTPASSWD_FILE=$SECRETSDIR/htpasswd                          # HTPASSWD_FILE can be whatever as it is not used/called anywhere.
+      - DOMAINNAME_CLOUD_SERVER                                     # Passing the domain name to traefik container to be able to use the variable in rules. 
+    secrets:                                                                                        #
+      - cloudflare_Email
+      - cloudflare_API
+      - htpasswd
+    labels:                                                                                         #
+      #- "autoheal=true"                                                                            #
+      #                                                                                             #
+      #                                                                                             #
+      ##  First is the line to enable or disable traefik for services. Quite simple.               ##
+      - "traefik.enable=true" #                                                                     #
+      #                                                                                             #
+      #                                                                                             #
+      ##  Add the routers to redirect all HTTP traefik to HTTPS port. HTTP-to-HTTPS Redirect       ##
+      - "traefik.http.routers.http-catchall.entrypoints=http"                                       #
+      - "traefik.http.routers.http-catchall.rule=HostRegexp(`{host:.+}`)"                           #
+      - "traefik.http.routers.http-catchall.middlewares=redirect-to-https"                          # 
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"                    #
+      #                                                                                             #
+      #                                                                                             #
+      # HTTP Routers - for entrypoints, certificate resolving, and domain information               #
+      - "traefik.http.routers.traefik-rtr.entrypoints=https"                                        #
+      - "traefik.http.routers.traefik-rtr.rule=Host(`traefik.$DOMAINNAME_CLOUD_SERVER`)"            #
+      - "traefik.http.routers.traefik-rtr.tls=true" # Some people had 404s without this             #
+      ##  Comment out the following line after first run to force the use of wildcard certs        ##
+      - "traefik.http.routers.traefik-rtr.tls.certresolver=dns-cloudflare"                          #
+      - "traefik.http.routers.traefik-rtr.tls.domains[0].main=$DOMAINNAME_CLOUD_SERVER"             #
+      - "traefik.http.routers.traefik-rtr.tls.domains[0].sans=*.$DOMAINNAME_CLOUD_SERVER"           #
+      ##  Pulls main cert for second domain                                                        ##
+      # - "traefik.http.routers.traefik-rtr.tls.domains[1].main=$DOMAINNAME2"                       #
+      #                                                                                             #
+      ##  Pulls wildcard cert for second domain                                                    ##
+      # - "traefik.http.routers.traefik-rtr.tls.domains[1].sans=*.$DOMAINNAME2"                     #
+      #                                                                                             #
+      ################################ NOTES ########################################################
+      ##  By default, Traefik will listen for incoming requests on all available entrypoints.      ##
+      ##  You can limit or specify an entrypoint if you’d like to do so.                           ##
+      ##  In the above case, Traefik will listen on only HTTPS (secure entrypoint).                ##
+      ################################ NOTES ########################################################
+      #                                                                                             #
+      #                                                                                             #
+      ############################ Services - API ###################################################
+      ##  Define where to find the service to be proxied.                                          ##
+      ##  With the insecure API disabled, we find the API internally using the following line      ##
+      - "traefik.http.routers.traefik-rtr.service=api@internal"                                     #
+      ############################ Services - API ###################################################
+      #                                                                                             #
+      #                                                                                             #
+      ########################### Healthcheck/ping ##################################################
+      #- "traefik.http.routers.ping.rule=Host(`traefik.$DOMAINNAME_CLOUD_SERVER`) && Path(`/ping`)" #
+      #- "traefik.http.routers.ping.tls=true"                                                       #
+      #- "traefik.http.routers.ping.service=ping@internal"                                          #
+      ########################### Healthcheck/ping ##################################################
+      #                                                                                             #
+      #                                                                                             #
+      ##  Middlewares: This will specify the security headers, set authentication, etc.            ##
+      ############################ Middlewares ######################################################
+      #                                                                                             #
+      #  For No Authentication use the following line.                                             ## 
+      #- "traefik.http.routers.traefik-rtr.middlewares=chain-no-auth@file"                          #
+      #                                                                                             #
+      #  For Basic HTTP Authentication use the following the line                                  ##
+      #- "traefik.http.routers.traefik-rtr.middlewares=chain-basic-auth@file"                        #
+      - "traefik.http.routers.traefik-rtr.middlewares=middlewares-basic-auth@file"                  #
+      #                                                                                             #
+      #  For Google OAuth                                                                          ##
+      #- "traefik.http.routers.traefik-rtr.middlewares=chain-oauth@file"                            #
+      #                                                                                             #
+      #  For Authelia Authentication                                                               ##
+      #- "traefik.http.routers.traefik-rtr.middlewares=chain-authelia@file"                         #
+      #                                                                                             #
+      ############################ Middlewares ######################################################
+      #                                                                                             #
+############################ Traefik 2 - Reverse Proxy ##############################################
+#                                                                                                   #
+#                                                                                                   #
+#################################### SERVICES #######################################################
+#                                                                                                   # 
+#################################### SERVICES #######################################################
+#                                                                                                   #
+#                                                                                                   #
+#################################### NETWORKS #######################################################
+# There is no need to create any networks outside this docker-compose file.                         #  
+# You may customize the network subnets (192.168.80.0/24 and 90.0/24) below as you please.          #
+# Docker Compose version 3.5 or higher required to define networks this way.                        # 
+#################################### NETWORKS #######################################################
+networks:                                                                                           #
+  t2_proxy:
+    name: t2_proxy
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.90.0/24
+  default:
+    driver: bridge
+  socket_proxy:
+    name: socket_proxy
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.80.0/24
+        
+#################################### NETWORKS #######################################################
+# There is no need to create any networks outside this docker-compose file.                         #  
+# You may customize the network subnets (192.168.80.0/24 and 90.0/24) below as you please.          #
+# Docker Compose version 3.5 or higher required to define networks this way.                        # 
+#################################### NETWORKS #######################################################      
+#                                                                                                   #
+#                                                                                                   #        
+#################################### SECRETS ########################################################
+secrets:                                                                                            # 
+  htpasswd:
+    file: $DOCKERDIR/notPorn/htpasswd
+  cloudflare_Email:
+    file: $DOCKERDIR/notPorn/cloudflare_Email
+  cloudflare_API:
+    file: $DOCKERDIR/notPorn/cloudflare_API
+  cf_token:
+    file: $DOCKERDIR/notPorn/cf_token
+  traefik_forward_auth:
+    file: $DOCKERDIR/notPorn/traefik_forward_auth
+  mysql_root_password:
+    file: $DOCKERDIR/notPorn/mysql_root_password
+  authelia_jwt_secret:
+    file: $DOCKERDIR/notPorn/authelia_jwt_secret
+  authelia_session_secret:
+    file: $DOCKERDIR/notPorn/authelia_session_secret
+  authelia_storage_mysql_password:
+    file: $DOCKERDIR/notPorn/authelia_storage_mysql_password
+  authelia_notifier_smtp_password:
+    file: $DOCKERDIR/notPorn/authelia_notifier_smtp_password
+  authelia_duo_api_secret_key:
+    file: $DOCKERDIR/notPorn/authelia_duo_api_secret_key
+  authelia_storage_encryption_key:
+    file: $DOCKERDIR/notPorn/authelia_storage_encryption_key
+  guac_db_name:
+    file: $DOCKERDIR/notPorn/guac_db_name
+  guac_mysql_user:
+    file: $DOCKERDIR/notPorn/guac_mysql_user
+  guac_mysql_password:
+    file: $DOCKERDIR/notPorn/guac_mysql_password
+  #traefik_hub_agent_token:
+  #  file: $DOCKERDIR/notPorn/traefik_hub_agent_token        
+  
+  
+  
+  
+  
+
+
+
+
+
+
+
+
+
+
+
+#################################### SECRETS ########################################################
+#                                                                                                   #
+#                                                                                                   #
+#                                                                                                   #
+#####################################################################################################
+###################┌────────────────────────────────────────────────────────────┐####################
+###################│END OF FILE THANKS FOR READING IT. YOU PROBABLY SHOULDN'T BE│####################
+###################└────────────────────────────────────────────────────────────┘####################
+#####################################################################################################
+#                                                                                                   #
+#                ⠀  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⣴⣶⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣿⣿⣿⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⡄⠀⠀⠀⠀⠀⠀⠀⠠⠛⠛⣿⣿⡄⠀⠀⢠⣤⠀⠀⠀⢀⡀⣀⣠⣤⣤⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠹⡄⠀⠀⠀⠀⠀⠀⠀⢀⣠⣿⣿⣿⣦⣤⣼⣿⠇⠀⢰⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠐⠤⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⡄⠀⠀⠀⠰⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣄⠀⢀⣽⣿⡏⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠈⠻⣦⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠰⣄⠀⠀⠀⢀⣿⣦⣶⣶⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇⣠⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠈⠙⢿⣷⣦⣀⠀⠀⠀⠀⠀⠀⠀⠹⣿⣶⣾⣿⣿⣿⡿⠿⠟⠛⠛⠛⠛⠛⠛⠿⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠙⢿⣿⣿⣦⣄⡀⠀⠀⣠⣾⣿⣿⣿⠟⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⢿⣿⣿⣿⣿⣿⣿⣷⣤⣤⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠻⣿⣿⣿⣷⣾⣿⣿⡿⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠻⣿⣿⣿⣿⣿⣿⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠙⣿⣿⣿⣿⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣾⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⢿⣿⣿⣿⣿⣧⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣿⣿⡿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣾⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⣿⣿⣿⣿⠷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣿⣿⣿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣿⣿⣿⣿⣿⣿⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⣿⣿⣿⣄⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠲⠶⢶⣦⣤⣾⣿⣿⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣿⣿⣿⣿⣿⣿⣿⣿⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⠿⠆⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⣿⣿⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡰⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⢦⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⣼⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⢠⣾⣧⡀⠀⠀⠀⠀⠀⠀⠀⠈⣿⣿⣿⣧⣤⡄⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⢠⣾⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⢀⣼⣿⣿⣿⣄⠀⠀⠀⠀⠀⠀⢠⣿⣿⣿⣷⡀⠀⠀⠀⠀⠀⠀⠀⣿⣿⣿⡿⠛⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠙⣿⣿⣇⠀⠀⠀⠀⠀⠀⢀⣾⣿⣿⣿⣿⣿⣆⠀⠀⠀⠀⣰⣿⣿⣿⣿⣿⣷⡀⠀⠀⠀⠀⠀⢰⣿⣿⣿⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣴⣿⣿⣿⠀⠀⠀⠀⠀⢠⣾⣿⣿⣿⣿⣿⣿⣿⣧⠀⠀⣴⣿⣿⣿⣿⣿⣿⣿⣿⡄⠀⠀⠀⠀⣸⣿⣿⡿⠟⠿⠷⠶⠤⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠻⠿⣿⣿⣿⣇⠀⠀⠀⠠⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠧⠼⠿⠿⠿⠿⠿⠿⠿⠿⠿⠿⠄⠀⠀⢠⣿⣿⣿⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⢹⣿⣿⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣾⣿⣿⠏⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⢿⣿⣿⣿⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣿⣿⣿⣿⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⣿⣿⣿⣷⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣿⣿⣿⢿⣿⣿⣿⣦⡀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣴⣾⣿⣿⣿⣿⣿⣷⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣿⣿⡿⠟⠁⠀⠈⠙⠻⢿⣿⣶⣄⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⣿⣿⣿⣿⣿⣿⣶⣤⣀⡀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣤⣶⣿⣿⣿⠿⣿⣇⠀⠀⠀⠀⠀⠀⠀⠉⠛⠿⣷⣤⡀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⠿⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣶⣶⣿⣿⣿⣿⠿⠿⢿⠉⠀⠀⠀⠙⠆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠻⢦⣀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⢸⣿⡿⠋⠉⠻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠈⢧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠑                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⣤⣤⣴⣿⣿⣧⡄⠀⢠⣼⡿⠛⢿⣿⣿⣿⠏⠁⠀⠀⠀⠀⠀⠀⠈⠆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠸⣿⣿⠿⠛⠛⠋⠀⠀⠘⠿⠁⠀⠀⠙⣿⣿⣄⣠⠀⠀⠀⠀⠀⠀⠀⠀⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⣿⠿⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⠿⠛⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀                      #
+#                                                                                                   #
+#                                                                                                   #
+#####################################################################################################
+###################┌────────────────────────────────────────────────────────────┐####################
+###################│END OF FILE THANKS FOR READING IT. YOU PROBABLY SHOULDN'T BE│####################
+###################└────────────────────────────────────────────────────────────┘####################
+#####################################################################################################
+
+

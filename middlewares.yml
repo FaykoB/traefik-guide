@@ -1,0 +1,13 @@
+######################################################### HTTP #########################################################################
+##  Adds a basic authentication middleware. We can specify users for authentication right here if you wish (the commented-out lines). ##
+##  Syntax for users is "<userName>:<hashed password.                                                                                 ##
+##  HTPasswd Generator: https://www.web2generators.com/apache-tools/htpasswd-generator                                                ##
+######################################################### HTTP #########################################################################
+http:
+  middlewares:
+    middlewares-basic-auth:
+      basicAuth:
+        # users:
+        #   - "user:$apr1$bvj3f2o0$/01DGlduxK4AqRsTwHnvc1"
+        usersFile: "/shared/.htpasswd" # be sure to mount the volume through docker-compose.yml
+        realm: "Traefik Basic Auth"
